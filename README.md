@@ -1,5 +1,5 @@
 # Repetier-Wanhao-i3
-Repetier Firmware v0.92.7 для Wanhao Duplicator i3 (плата управления Melzi).
+Repetier Firmware v0.92.7 для Wanhao Duplicator i3 V2 (плата управления Melzi).
 
 # Особенности
 **Внимание!!!** Более позднии версии Repetier Firmware загружаться в плату Melzi - **НЕ БУДУТ (из-за нехватки памяти)!!!**
