@@ -968,7 +968,7 @@ STEPPER_CURRENT_CONTROL
 #define HEATER_0_PIN       13 
 #define HEATER_2_PIN       -1
 // bed (change to 12 for breakout pin on header)
-#define HEATER_1_PIN     10 
+#define HEATER_1_PIN     12 
 
 #define ORIG_X_ENABLE_PIN       14
 #define ORIG_Y_ENABLE_PIN       14
