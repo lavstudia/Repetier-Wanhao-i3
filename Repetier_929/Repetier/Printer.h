@@ -115,6 +115,14 @@ union wizardVar
 #define towerBMinSteps Printer::yMinSteps
 #define towerCMinSteps Printer::zMinSteps
 
+class Plane {
+	public:
+	// f(x, y) = ax + by + c
+	float a,b,c;
+	float z(float x,float y) {
+		return a * x + y * b + c;
+	}
+};
 #if DISTORTION_CORRECTION
 class Distortion
 {
@@ -123,10 +131,15 @@ public:
     void init();
     void enable(bool permanent = true);
     void disable(bool permanent = true);
-    void measure(void);
+    bool measure(void);
     int32_t correct(int32_t x, int32_t y, int32_t z) const;
     void updateDerived();
     void reportStatus();
+	bool isEnabled() {return enabled;}
+	int32_t zMaxSteps() {return zEnd;}	
+	void set(float x,float y,float z);
+	void showMatrix();		
+    void resetCorrection();
 private:
     int matrixIndex(fast8_t x, fast8_t y) const;
     int32_t getMatrix(int index) const;
@@ -135,10 +148,14 @@ private:
     INLINE int32_t extrapolatePoint(fast8_t x1, fast8_t y1, fast8_t x2, fast8_t y2) const;
     void extrapolateCorner(fast8_t x, fast8_t y, fast8_t dx, fast8_t dy);
     void extrapolateCorners();
-    void resetCorrection();
 // attributes
+#if DRIVE_SYSTEM == DELTA	
     int32_t step;
     int32_t radiusCorrectionSteps;
+#else
+	int32_t xCorrectionSteps,xOffsetSteps;
+	int32_t yCorrectionSteps,yOffsetSteps;
+#endif	
     int32_t zStart,zEnd;
 #if !DISTORTION_PERMANENT
     int32_t matrix[DISTORTION_CORRECTION_POINTS * DISTORTION_CORRECTION_POINTS];
@@ -178,7 +195,15 @@ public:
     static void update();
     static void report();
     static INLINE bool anyXYZMax() {
-        return (lastState & (ENDSTOP_X_MAX_ID|ENDSTOP_Z_MAX_ID|ENDSTOP_Z_MAX_ID)) != 0;
+        return (lastState & (ENDSTOP_X_MAX_ID|ENDSTOP_Y_MAX_ID|ENDSTOP_Z_MAX_ID)) != 0;
+    }
+    static INLINE bool anyXYZ() {
+#ifdef EXTENDED_ENDSTOPS
+	    return (lastState & (ENDSTOP_X_MAX_ID|ENDSTOP_Y_MAX_ID|ENDSTOP_Z_MAX_ID|ENDSTOP_X_MIN_ID|ENDSTOP_Y_MIN_ID|ENDSTOP_Z_MIN_ID|ENDSTOP_Z2_MIN_ID)) != 0 ||
+		lastState2 != 0;
+#else
+	    return (lastState & (ENDSTOP_X_MAX_ID|ENDSTOP_Y_MAX_ID|ENDSTOP_Z_MAX_ID|ENDSTOP_X_MIN_ID|ENDSTOP_Y_MIN_ID|ENDSTOP_Z_MIN_ID|ENDSTOP_Z2_MIN_ID)) != 0;
+#endif
     }
     static INLINE void resetAccumulator() {
         accumulator = 0;
@@ -306,7 +331,7 @@ public:
     static float extrusionFactor; ///< Extrusion multiply factor
 #if NONLINEAR_SYSTEM
     static int32_t maxDeltaPositionSteps;
-    static int32_t currentDeltaPositionSteps[E_TOWER_ARRAY];
+    static int32_t currentNonlinearPositionSteps[E_TOWER_ARRAY];
     static floatLong deltaDiagonalStepsSquaredA;
     static floatLong deltaDiagonalStepsSquaredB;
     static floatLong deltaDiagonalStepsSquaredC;
@@ -323,10 +348,13 @@ public:
     static int16_t printMovesPerSecond;
     static float radius0;
 #endif
+#if DRIVE_SYSTEM != DELTA
+	static int32_t zCorrectionStepsIncluded; 	
+#endif
 #if FEATURE_Z_PROBE || MAX_HARDWARE_ENDSTOP_Z || NONLINEAR_SYSTEM
     static int32_t stepsRemainingAtZHit;
 #endif
-#if DRIVE_SYSTEM==DELTA
+#if DRIVE_SYSTEM == DELTA
     static int32_t stepsRemainingAtXHit;
     static int32_t stepsRemainingAtYHit;
 #endif
@@ -337,6 +365,10 @@ public:
 #endif
 #if FEATURE_AUTOLEVEL
     static float autolevelTransformation[9]; ///< Transformation matrix
+#endif
+#if FAN_THERMO_PIN > -1
+	static float thermoMinTemp;
+	static float thermoMaxTemp;
 #endif
     static int16_t zBabystepsMissing;
     static float minimumSpeed;               ///< lowest allowed speed to keep integration error small
@@ -378,7 +410,7 @@ public:
     static float memoryZ;
     static float memoryE;
     static float memoryF;
-#if GANTRY
+#if GANTRY && !defined(FAST_COREXYZ)
     static int8_t motorX;
     static int8_t motorYorZ;
 #endif
@@ -418,6 +450,7 @@ public:
 	static void toggleDryRun();
 	static void toggleCommunication();
 	static void toggleNoMoves();
+    static void toggleEndStop();
 	static INLINE uint8_t getDebugLevel() {return debugLevel;}
     static INLINE bool debugEcho()
     {
@@ -449,6 +482,11 @@ public:
         return ((debugLevel & 32) != 0);
     }
 
+    static INLINE bool debugEndStop()
+    {
+        return ((debugLevel & 64) != 0);
+    }
+    
     static INLINE bool debugFlag(uint8_t flags)
     {
         return (debugLevel & flags);
@@ -472,7 +510,7 @@ public:
 #if (X_ENABLE_PIN > -1)
         WRITE(X_ENABLE_PIN, !X_ENABLE_ON);
 #endif
-#if FEATURE_TWO_XSTEPPER && (X2_ENABLE_PIN > -1)
+#if (FEATURE_TWO_XSTEPPER || DUAL_X_AXIS) && (X2_ENABLE_PIN > -1)
         WRITE(X2_ENABLE_PIN, !X_ENABLE_ON);
 #endif
     }
@@ -507,7 +545,7 @@ public:
 #if (X_ENABLE_PIN > -1)
         WRITE(X_ENABLE_PIN, X_ENABLE_ON);
 #endif
-#if FEATURE_TWO_XSTEPPER && (X2_ENABLE_PIN > -1)
+#if (FEATURE_TWO_XSTEPPER || DUAL_X_AXIS) && (X2_ENABLE_PIN > -1)
         WRITE(X2_ENABLE_PIN, X_ENABLE_ON);
 #endif
     }
@@ -541,14 +579,14 @@ public:
         if(positive)
         {
             WRITE(X_DIR_PIN,!INVERT_X_DIR);
-#if FEATURE_TWO_XSTEPPER
+#if FEATURE_TWO_XSTEPPER || DUAL_X_AXIS
             WRITE(X2_DIR_PIN,!INVERT_X_DIR);
 #endif
         }
         else
         {
             WRITE(X_DIR_PIN,INVERT_X_DIR);
-#if FEATURE_TWO_XSTEPPER
+#if FEATURE_TWO_XSTEPPER || DUAL_X_AXIS
             WRITE(X2_DIR_PIN,INVERT_X_DIR);
 #endif
         }
@@ -801,7 +839,7 @@ public:
     {
         flag0 &= ~PRINTER_FLAG0_STEPPER_DISABLED;
 #if FAN_BOARD_PIN > -1
-        pwm_pos[PWM_BOARD_FAN] = 255;
+        pwm_pos[PWM_BOARD_FAN] = BOARD_FAN_SPEED;
 #endif // FAN_BOARD_PIN
     }
     static INLINE bool isAnyTempsensorDefect()
@@ -811,6 +849,7 @@ public:
     static INLINE void setAnyTempsensorDefect()
     {
         flag0 |= PRINTER_FLAG0_TEMPSENSOR_DEFECT;
+		debugSet(8);
     }
     static INLINE void unsetAnyTempsensorDefect()
     {
@@ -839,7 +878,7 @@ public:
     }
     static INLINE void executeXYGantrySteps()
     {
-#if (GANTRY)
+#if (GANTRY) && !defined(FAST_COREXYZ)
         if(motorX <= -2)
         {
             WRITE(X_STEP_PIN,START_STEP_WITH_HIGH);
@@ -876,7 +915,7 @@ public:
     }
     static INLINE void executeXZGantrySteps()
     {
-#if (GANTRY)
+#if (GANTRY) && !defined(FAST_COREXYZ)
         if(motorX <= -2)
         {
             WRITE(X_STEP_PIN,START_STEP_WITH_HIGH);
@@ -895,7 +934,6 @@ public:
         }
         if(motorYorZ <= -2)
         {
-            //ANALYZER_ON(ANALYZER_CH3); // I dont think i can use these as they are for the y - possible bug area though
             WRITE(Z_STEP_PIN,START_STEP_WITH_HIGH);
 #if FEATURE_TWO_ZSTEPPER
             WRITE(Z2_STEP_PIN,START_STEP_WITH_HIGH);
@@ -907,7 +945,6 @@ public:
         }
         else if(motorYorZ >= 2)
         {
-            //ANALYZER_ON(ANALYZER_CH3); // I dont think i can use these as they are for the y - possible bug area though
             WRITE(Z_STEP_PIN,START_STEP_WITH_HIGH);
 #if FEATURE_TWO_ZSTEPPER
             WRITE(Z2_STEP_PIN,START_STEP_WITH_HIGH);
@@ -921,9 +958,24 @@ public:
     }
     static INLINE void startXStep()
     {
+#if DUAL_X_AXIS
+#if FEATURE_DITTO_PRINTING
+		if(Extruder::dittoMode) {
+			WRITE(X_STEP_PIN,START_STEP_WITH_HIGH);
+			WRITE(X2_STEP_PIN,START_STEP_WITH_HIGH);
+			return;
+		}
+#endif
+		if(Extruder::current->id) {
+			WRITE(X2_STEP_PIN,START_STEP_WITH_HIGH);			
+		} else {
+			WRITE(X_STEP_PIN,START_STEP_WITH_HIGH);			
+		}
+#else		
         WRITE(X_STEP_PIN,START_STEP_WITH_HIGH);
 #if FEATURE_TWO_XSTEPPER
         WRITE(X2_STEP_PIN,START_STEP_WITH_HIGH);
+#endif
 #endif
     }
     static INLINE void startYStep()
@@ -946,7 +998,7 @@ public:
     static INLINE void endXYZSteps()
     {
         WRITE(X_STEP_PIN,!START_STEP_WITH_HIGH);
-#if FEATURE_TWO_XSTEPPER
+#if FEATURE_TWO_XSTEPPER || DUAL_X_AXIS
         WRITE(X2_STEP_PIN,!START_STEP_WITH_HIGH);
 #endif
         WRITE(Y_STEP_PIN,!START_STEP_WITH_HIGH);
@@ -1045,7 +1097,7 @@ public:
     static void defaultLoopActions();
     static uint8_t setDestinationStepsFromGCode(GCode *com);
     static uint8_t moveTo(float x,float y,float z,float e,float f);
-    static uint8_t moveToReal(float x,float y,float z,float e,float f);
+    static uint8_t moveToReal(float x,float y,float z,float e,float f,bool pathOptimize = true);
     static void homeAxis(bool xaxis,bool yaxis,bool zaxis); /// Home axis
     static void setOrigin(float xOff,float yOff,float zOff);
     static bool isPositionAllowed(float x,float y,float z);
@@ -1060,9 +1112,9 @@ public:
 #if NONLINEAR_SYSTEM
     static INLINE void setDeltaPositions(long xaxis, long yaxis, long zaxis)
     {
-        currentDeltaPositionSteps[A_TOWER] = xaxis;
-        currentDeltaPositionSteps[B_TOWER] = yaxis;
-        currentDeltaPositionSteps[C_TOWER] = zaxis;
+        currentNonlinearPositionSteps[A_TOWER] = xaxis;
+        currentNonlinearPositionSteps[B_TOWER] = yaxis;
+        currentNonlinearPositionSteps[C_TOWER] = zaxis;
     }
     static void deltaMoveToTopEndstops(float feedrate);
 #endif
@@ -1070,20 +1122,23 @@ public:
     static float runZMaxProbe();
 #endif
 #if FEATURE_Z_PROBE
+	static void startProbing(bool runScript);
+	static void finishProbing();
     static float runZProbe(bool first,bool last,uint8_t repeat = Z_PROBE_REPETITIONS,bool runStartScript = true);
     static void waitForZProbeStart();
     static float bendingCorrectionAt(float x,float y);
 #endif
     // Moved outside FEATURE_Z_PROBE to allow auto-level functional test on
     // system without Z-probe
-#if FEATURE_AUTOLEVEL
     static void transformToPrinter(float x,float y,float z,float &transX,float &transY,float &transZ);
     static void transformFromPrinter(float x,float y,float z,float &transX,float &transY,float &transZ);
+#if FEATURE_AUTOLEVEL
     static void resetTransformationMatrix(bool silent);
-    static void buildTransformationMatrix(float h1,float h2,float h3);
+    //static void buildTransformationMatrix(float h1,float h2,float h3);
+    static void buildTransformationMatrix(Plane &plane);
 #endif
 #if DISTORTION_CORRECTION
-    static void measureDistortion(void);
+    static bool measureDistortion(void);
     static Distortion distortion;
 #endif
     static void MemoryPosition();
@@ -1108,7 +1163,6 @@ public:
 #if JSON_OUTPUT
     static void showJSONStatus(int type);
 #endif
-private:
     static void homeXAxis();
     static void homeYAxis();
     static void homeZAxis();

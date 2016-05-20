@@ -43,6 +43,7 @@ int8_t   GCode::waitingForResend = -1; ///< Waiting for line to be resend. -1 = 
 volatile uint8_t GCode::bufferLength = 0; ///< Number of commands stored in gcode_buffer
 millis_t GCode::timeOfLastDataPacket = 0; ///< Time, when we got the last data packet. Used to detect missing uint8_ts.
 uint8_t  GCode::formatErrors = 0;
+PGM_P GCode::fatalErrorMsg = NULL; ///< message unset = no fatal error 
 
 /** \page Repetier-protocol
 
@@ -221,8 +222,19 @@ void GCode::checkAndPushCommand()
             return;
         }
         lastLineNumber = actLineNumber;
-    }
-    pushCommand();
+    } else if(lastLineNumber && !(hasM() && M == 117)) { // once line number always line number!
+		if(Printer::debugErrors())
+        {
+			Com::printErrorFLN(PSTR("Missing linenumber"));
+		}
+		requestResend();
+		return;
+	}
+	if(GCode::hasFatalError() && !(hasM() && M==999)) {
+		GCode::reportFatalError();
+	} else {
+		pushCommand();
+	}
 #ifdef DEBUG_COM_ERRORS
     if(hasM() && M == 667)
         return; // omit ok
@@ -417,7 +429,7 @@ void GCode::readFromSerial()
             }
             else
             {
-                if(ch == ';') commentDetected = true; // ignore new data until lineend
+                if(ch == ';') commentDetected = true; // ignore new data until line end
                 if(commentDetected) commandsReceivingWritePosition--;
             }
         }
@@ -500,7 +512,7 @@ void GCode::readFromSerial()
             }
             else
             {
-                if(ch == ';') commentDetected = true; // ignore new data until lineend
+                if(ch == ';') commentDetected = true; // ignore new data until line end
                 if(commentDetected) commandsReceivingWritePosition--;
             }
         }
@@ -567,12 +579,12 @@ bool GCode::parseBinary(uint8_t *buffer,bool fromSerial)
     }
     if(isV2())   // Read G,M as 16 bit value
     {
-        if(params & 2)
+        if(hasM())
         {
             M = *(uint16_t *)p;
             p += 2;
         }
-        if(params & 4)
+        if(hasG())
         {
             G = *(uint16_t *)p;
             p += 2;
@@ -580,51 +592,51 @@ bool GCode::parseBinary(uint8_t *buffer,bool fromSerial)
     }
     else
     {
-        if(params & 2)
+        if(hasM())
         {
             M = *p++;
         }
-        if(params & 4)
+        if(hasG())
         {
             G = *p++;
         }
     }
     //if(code->params & 8) {memcpy(&code->X,p,4);p+=4;}
-    if(params & 8)
+    if(hasX())
     {
         X = *(float *)p;
         p += 4;
     }
-    if(params & 16)
+    if(hasY())
     {
         Y = *(float *)p;
         p += 4;
     }
-    if(params & 32)
+    if(hasZ())
     {
         Z = *(float *)p;
         p += 4;
     }
-    if(params & 64)
+    if(hasE())
     {
         E = *(float *)p;
         p += 4;
     }
-    if(params & 256)
+    if(hasF())
     {
         F = *(float *)p;
         p += 4;
     }
-    if(params & 512)
+    if(hasT())
     {
         T = *p++;
     }
-    if(params & 1024)
+    if(hasS())
     {
         S = *(int32_t*)p;
         p += 4;
     }
-    if(params & 2048)
+    if(hasP())
     {
         P = *(int32_t*)p;
         p += 4;
@@ -847,6 +859,62 @@ bool GCode::parseAscii(char *line,bool fromSerial)
             params |= 4096; // Needs V2 for saving
             break;
         }
+        case 'C':
+        case 'c':
+        {
+	        D = parseFloatValue(pos);
+	        params2 |= 16;
+	        params |= 4096; // Needs V2 for saving
+	        break;
+        }
+        case 'H':
+        case 'h':
+        {
+	        D = parseFloatValue(pos);
+	        params2 |= 32;
+	        params |= 4096; // Needs V2 for saving
+	        break;
+        }
+        case 'A':
+        case 'a':
+        {
+	        D = parseFloatValue(pos);
+	        params2 |= 64;
+	        params |= 4096; // Needs V2 for saving
+	        break;
+        }
+        case 'B':
+        case 'b':
+        {
+	        D = parseFloatValue(pos);
+	        params2 |= 128;
+	        params |= 4096; // Needs V2 for saving
+	        break;
+        }
+        case 'K':
+        case 'k':
+        {
+	        D = parseFloatValue(pos);
+	        params2 |= 256;
+	        params |= 4096; // Needs V2 for saving
+	        break;
+        }
+        case 'L':
+        case 'l':
+        {
+	        D = parseFloatValue(pos);
+	        params2 |= 512;
+	        params |= 4096; // Needs V2 for saving
+	        break;
+        }
+        case 'O':
+        case 'o':
+        {
+	        D = parseFloatValue(pos);
+	        params2 |= 1024;
+	        params |= 4096; // Needs V2 for saving
+	        break;
+        }
         case '*' : //checksum
         {
             uint8_t checksum_given = parseLongValue(pos);
@@ -954,11 +1022,41 @@ void GCode::printCommand()
     Com::println();
 }
 
+void GCode::fatalError(FSTRINGPARAM(message)) {
+	fatalErrorMsg = message;
+#if SDSUPPORT
+	if(sd.sdmode != 0)	{ // stop sd print to prevent damage
+		sd.stopPrint();
+	}
+#endif	
+	if(Printer::currentPosition[Z_AXIS] < Printer::zMin + Printer::zLength - 15)
+		PrintLine::moveRelativeDistanceInStepsReal(0,0,10*Printer::axisStepsPerMM[Z_AXIS],0,Printer::homingFeedrate[Z_AXIS],true,true);
+	EVENT_FATAL_ERROR_OCCURED		
+	Commands::waitUntilEndOfAllMoves();
+	Printer::kill(true);		
+	reportFatalError();
+}
+
+void GCode::reportFatalError() {
+	Com::printF(Com::tFatal);
+	Com::printF(fatalErrorMsg);
+	Com::printFLN(PSTR(" Printer stopped and heaters disabled due to this error. Fix error and restart with M999."));
+	UI_ERROR_P(fatalErrorMsg)
+}
+
+void GCode::resetFatalError() {
+	TemperatureController::resetAllErrorStates();
+	fatalErrorMsg = NULL;
+	UI_ERROR("");
+	EVENT_CONTINUE_FROM_FATAL_ERROR
+	Com::printFLN(PSTR("info:Continue from fatal state"));
+}
+
 #if JSON_OUTPUT
 
 // --------------------------------------------------------------- //
 // Code that gets gcode information is adapted from RepRapFirmware //
-// Originally licenced under GPL                                   //
+// Originally licensed under GPL                                   //
 // Authors: reprappro, dc42, dcnewman, others                      //
 // Source: https://github.com/dcnewman/RepRapFirmware              //
 // Copy date: 15 Nov 2015                                          //

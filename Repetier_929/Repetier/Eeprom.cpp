@@ -63,7 +63,12 @@ void EEPROM::update(GCode *com)
 
 void EEPROM::restoreEEPROMSettingsFromConfiguration()
 {
+	// can only be done right if we also update permanent values not cached!
 #if EEPROM_MODE != 0
+	EEPROM::initalizeUncached();
+    uint8_t newcheck = computeChecksum();
+    if(newcheck != HAL::eprGetByte(EPR_INTEGRITY_BYTE))
+		HAL::eprSetByte(EPR_INTEGRITY_BYTE, newcheck);	
     baudrate = BAUDRATE;
     maxInactiveTime = MAX_INACTIVE_TIME * 1000L;
     stepperInactiveTime = STEPPER_INACTIVE_TIME * 1000L;
@@ -106,6 +111,13 @@ void EEPROM::restoreEEPROMSettingsFromConfiguration()
     Printer::xMin = X_MIN_POS;
     Printer::yMin = Y_MIN_POS;
     Printer::zMin = Z_MIN_POS;
+#if NONLINEAR_SYSTEM
+#ifdef ROD_RADIUS
+	Printer::radius0 = ROD_RADIUS;
+#else
+	Printer::radius0 = 0;
+#endif	
+#endif
 #if ENABLE_BACKLASH_COMPENSATION
     Printer::backlashX = X_BACKLASH;
     Printer::backlashY = Y_BACKLASH;
@@ -468,11 +480,13 @@ void EEPROM::initalizeUncached()
     HAL::eprSetFloat(EPR_AXISCOMP_TANXZ,AXISCOMP_TANXZ);
     HAL::eprSetFloat(EPR_Z_PROBE_BED_DISTANCE,Z_PROBE_BED_DISTANCE);
     Printer::zBedOffset = HAL::eprGetFloat(EPR_Z_PROBE_Z_OFFSET);
+	#if NONLINEAR_SYSTEM
+    HAL::eprSetInt16(EPR_DELTA_SEGMENTS_PER_SECOND_PRINT,DELTA_SEGMENTS_PER_SECOND_PRINT);
+    HAL::eprSetInt16(EPR_DELTA_SEGMENTS_PER_SECOND_MOVE,DELTA_SEGMENTS_PER_SECOND_MOVE);
+	#endif
 #if DRIVE_SYSTEM == DELTA
     HAL::eprSetFloat(EPR_DELTA_DIAGONAL_ROD_LENGTH,DELTA_DIAGONAL_ROD);
     HAL::eprSetFloat(EPR_DELTA_HORIZONTAL_RADIUS,ROD_RADIUS);
-    HAL::eprSetInt16(EPR_DELTA_SEGMENTS_PER_SECOND_PRINT,DELTA_SEGMENTS_PER_SECOND_PRINT);
-    HAL::eprSetInt16(EPR_DELTA_SEGMENTS_PER_SECOND_MOVE,DELTA_SEGMENTS_PER_SECOND_MOVE);
     HAL::eprSetInt16(EPR_DELTA_TOWERX_OFFSET_STEPS,DELTA_X_ENDSTOP_OFFSET_STEPS);
     HAL::eprSetInt16(EPR_DELTA_TOWERY_OFFSET_STEPS,DELTA_Y_ENDSTOP_OFFSET_STEPS);
     HAL::eprSetInt16(EPR_DELTA_TOWERZ_OFFSET_STEPS,DELTA_Z_ENDSTOP_OFFSET_STEPS);
@@ -526,7 +540,7 @@ void EEPROM::readDataFromEEPROM(bool includeExtruder)
     Printer::homingFeedrate[Y_AXIS] = HAL::eprGetFloat(EPR_Y_HOMING_FEEDRATE);
     Printer::homingFeedrate[Z_AXIS] = HAL::eprGetFloat(EPR_Z_HOMING_FEEDRATE);
     Printer::maxJerk = HAL::eprGetFloat(EPR_MAX_JERK);
-#if DRIVE_SYSTEM!=DELTA
+#if DRIVE_SYSTEM != DELTA
     Printer::maxZJerk = HAL::eprGetFloat(EPR_MAX_ZJERK);
 #endif
 #if RAMP_ACCELERATION
@@ -653,11 +667,13 @@ void EEPROM::readDataFromEEPROM(bool includeExtruder)
         }
         if(version < 4)
         {
+#if NONLINEAR_SYSTEM
+            HAL::eprSetInt16(EPR_DELTA_SEGMENTS_PER_SECOND_PRINT,DELTA_SEGMENTS_PER_SECOND_PRINT);
+            HAL::eprSetInt16(EPR_DELTA_SEGMENTS_PER_SECOND_MOVE,DELTA_SEGMENTS_PER_SECOND_MOVE);
+#endif			
 #if DRIVE_SYSTEM == DELTA
             HAL::eprSetFloat(EPR_DELTA_DIAGONAL_ROD_LENGTH,DELTA_DIAGONAL_ROD);
             HAL::eprSetFloat(EPR_DELTA_HORIZONTAL_RADIUS,ROD_RADIUS);
-            HAL::eprSetInt16(EPR_DELTA_SEGMENTS_PER_SECOND_PRINT,DELTA_SEGMENTS_PER_SECOND_PRINT);
-            HAL::eprSetInt16(EPR_DELTA_SEGMENTS_PER_SECOND_MOVE,DELTA_SEGMENTS_PER_SECOND_MOVE);
             HAL::eprSetInt16(EPR_DELTA_TOWERX_OFFSET_STEPS,DELTA_X_ENDSTOP_OFFSET_STEPS);
             HAL::eprSetInt16(EPR_DELTA_TOWERY_OFFSET_STEPS,DELTA_Y_ENDSTOP_OFFSET_STEPS);
             HAL::eprSetInt16(EPR_DELTA_TOWERZ_OFFSET_STEPS,DELTA_Z_ENDSTOP_OFFSET_STEPS);
@@ -797,7 +813,7 @@ void EEPROM::init()
     }
     else
     {
-        HAL::eprSetByte(EPR_MAGIC_BYTE,EEPROM_MODE); // Make datachange permanent
+        HAL::eprSetByte(EPR_MAGIC_BYTE,EEPROM_MODE); // Make data change permanent
         initalizeUncached();
         storeDataIntoEEPROM(storedcheck != check);
     }
@@ -871,7 +887,10 @@ void EEPROM::writeSettings()
     writeFloat(EPR_BACKLASH_Y, Com::tEPRYBacklash);
     writeFloat(EPR_BACKLASH_Z, Com::tEPRZBacklash);
 #endif
-
+#if NONLINEAR_SYSTEM
+    writeInt(EPR_DELTA_SEGMENTS_PER_SECOND_MOVE, Com::tEPRSegmentsPerSecondTravel);
+    writeInt(EPR_DELTA_SEGMENTS_PER_SECOND_PRINT, Com::tEPRSegmentsPerSecondPrint);
+#endif
 #if RAMP_ACCELERATION
     //epr_out_float(EPR_X_MAX_START_SPEED,PSTR("X-axis start speed [mm/s]"));
     //epr_out_float(EPR_Y_MAX_START_SPEED,PSTR("Y-axis start speed [mm/s]"));
@@ -888,8 +907,6 @@ void EEPROM::writeSettings()
     writeFloat(EPR_DELTA_DIAGONAL_ROD_LENGTH, Com::tEPRDiagonalRodLength);
     writeFloat(EPR_DELTA_HORIZONTAL_RADIUS, Com::tEPRHorizontalRadius);
     writeFloat(EPR_DELTA_MAX_RADIUS, Com::tEPRDeltaMaxRadius);
-    writeInt(EPR_DELTA_SEGMENTS_PER_SECOND_MOVE, Com::tEPRSegmentsPerSecondTravel);
-    writeInt(EPR_DELTA_SEGMENTS_PER_SECOND_PRINT, Com::tEPRSegmentsPerSecondPrint);
     writeInt(EPR_DELTA_TOWERX_OFFSET_STEPS, Com::tEPRTowerXOffset);
     writeInt(EPR_DELTA_TOWERY_OFFSET_STEPS, Com::tEPRTowerYOffset);
     writeInt(EPR_DELTA_TOWERZ_OFFSET_STEPS, Com::tEPRTowerZOffset);
