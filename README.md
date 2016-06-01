@@ -83,7 +83,9 @@ _Подготовка к загрузке Bootloader:_
   * Разобрать блок управления принтера
   * Извлечь плату управления Melzi (отвинтить 4 винта)
   * Переключить перемычку на USB
+ ![alt text](https://github.com/lavstudia/Repetier-Wanhao-i3/blob/master/img/SW_USB.png "USB перемычка")
   * Соединить плату Arduino c платой Melzi по 4-м проводам (ICSP/SPI):
+ ![alt text](https://github.com/lavstudia/Repetier-Wanhao-i3/blob/master/img/ICSP.png "ICSP интерфейс")
    - Arduino UNO и NANO:
      
  			pin 1 MISO (Melzi) on pin 12 (Arduino)
@@ -122,6 +124,7 @@ _Завершение процесса:_
  * Отключить плату Melzi от компьютера
  * Отсоединить плату Arduino от платы Melzi
  * Переключить перемычку на PWR (плата Melzi)
+ ![alt text](https://github.com/lavstudia/Repetier-Wanhao-i3/blob/master/img/SW_PWR.png "PWR перемычка")
  * **_Перед дальнейшей сборкой, желательно проверить загрузку прошивки_**
  * Установить плату Melzi в блок управления принтером (завинтить 4 винта)
  * Собрать блок управления принтером
