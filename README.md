@@ -90,7 +90,7 @@ _Подготовка к загрузке Bootloader:_
      
  			pin 1 MISO (Melzi) on pin 12 (Arduino)
  			  
-  			pin 3 SCk  (Melzi) on pin 13 (Arduino)
+  			pin 3 SCK  (Melzi) on pin 13 (Arduino)
  
   			pin 5 Reset(Melzi) on pin 10 (Arduino)
   				
@@ -100,9 +100,9 @@ _Подготовка к загрузке Bootloader:_
   		
  			pin 1 MISO (Melzi) on pin 50 (Arduino)
  				 
-  			pin 3 SCk  (Melzi) on pin 52 (Arduino)
+  			pin 3 SCK  (Melzi) on pin 52 (Arduino)
   				
-  			pin 5 Reset(Melzi) on pin 10 (Arduino)
+  			pin 5 Reset(Melzi) on pin 53 (Arduino)
   				
   			pin 4 MOSI (Melzo) on pin 51 (Arduino)
   				
