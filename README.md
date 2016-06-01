@@ -86,7 +86,7 @@ _Подготовка к загрузке Bootloader:_
  ![alt text](https://github.com/lavstudia/Repetier-Wanhao-i3/blob/master/img/SW_USB.png "USB перемычка")
   * Соединить плату Arduino c платой Melzi по 4-м проводам (ICSP/SPI):
  ![alt text](https://github.com/lavstudia/Repetier-Wanhao-i3/blob/master/img/ICSP.png "ICSP интерфейс")
-   - Arduino UNO и NANO:
+    - Arduino UNO и NANO:
      
  			pin 1 MISO (Melzi) on pin 12 (Arduino)
  			  
